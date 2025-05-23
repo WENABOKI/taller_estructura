@@ -35,7 +35,7 @@ public:
             }
         }
         
-        // Colocar el barco
+        
         for (int i = 0; i < largo; ++i) {
             if (horizontal) {
                 f = fila;  
