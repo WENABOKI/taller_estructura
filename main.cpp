@@ -105,7 +105,7 @@ bool colocarBarcoAleatorio(char tablero[10][10], int tamano) {
     return false;
 }
 
-void inicializarTableroEnemigo(char tablero[10][10]) {
+void inicializarTableroEnemigo(char tablero[10][10], Jugador& enemigo) {
     // Inicializar con agua
     for (int i = 0; i < 10; i++) {
         for (int j = 0; j < 10; j++) {
@@ -113,10 +113,25 @@ void inicializarTableroEnemigo(char tablero[10][10]) {
         }
     }
     
-    // Colocar barcos aleatoriamente
+    // Colocar barcos aleatoriamente usando la clase Jugador
     vector<int> tamanosBarcos = {4, 3, 2, 1};
     for (int tamano : tamanosBarcos) {
-        colocarBarcoAleatorio(tablero, tamano);
+        bool colocado = false;
+        for (int intentos = 0; intentos < 100 && !colocado; intentos++) {
+            int fila = rand() % BOARD_SIZE;
+            int col = rand() % BOARD_SIZE;
+            bool horizontal = rand() % 2;
+            
+            if (enemigo.colocarBarco(fila, col, tamano, horizontal)) {
+                // Actualizar tablero visual
+                for (int i = 0; i < tamano; i++) {
+                    int f = horizontal ? fila : fila + i;
+                    int c = horizontal ? col + i : col;
+                    tablero[f][c] = 'B';
+                }
+                colocado = true;
+            }
+        }
     }
 }
 
@@ -142,8 +157,13 @@ int main() {
     textoTitulo.setCharacterSize(20);
     textoTitulo.setFillColor(sf::Color::White);
     
+    sf::Text textoVictoria(font);
+    textoVictoria.setCharacterSize(30);
+    textoVictoria.setFillColor(sf::Color::Green);
+    
     // Crear jugadores y tableros
     Jugador jugador;
+    Jugador enemigo;
     char tableroJugador[10][10];
     char tableroEnemigo[10][10];
     char disparosEnemigo[10][10]; // Para rastrear disparos al enemigo
@@ -157,17 +177,18 @@ int main() {
     }
     
     // Inicializar tablero enemigo con barcos aleatorios
-    inicializarTableroEnemigo(tableroEnemigo);
+    srand(time(0));
+    inicializarTableroEnemigo(tableroEnemigo, enemigo);
     
     // Variables para colocar barcos del jugador
     vector<int> tamanosBarcos = {4, 3, 2, 1};
     int barcoActual = 0;
     bool horizontal = true;
     bool todosColocados = false;
-    bool juegoIniciado = false;
+    bool juegoTerminado = false;
     string mensaje = "";
     
-    enum EstadoJuego { COLOCANDO_BARCOS, JUGANDO };
+    enum EstadoJuego { COLOCANDO_BARCOS, JUGANDO, JUEGO_TERMINADO };
     EstadoJuego estado = COLOCANDO_BARCOS;
    
     while (window.isOpen()) {
@@ -236,17 +257,37 @@ int main() {
                             
                             // Verificar que no se haya disparado ya en esa posición
                             if (disparosEnemigo[fila][col] == '~') {
-                                if (tableroEnemigo[fila][col] == 'B') {
-                                    disparosEnemigo[fila][col] = 'H'; // Hit
-                                    mensaje = "¡Impacto! (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
-                                } else {
-                                    disparosEnemigo[fila][col] = 'X'; // Miss
-                                    mensaje = "Agua. (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
+                                // Usar la clase Jugador para registrar y recibir disparo
+                                if (jugador.registrarDisparo(fila, col)) {
+                                    bool impacto = enemigo.recibirDisparo(fila, col);
+                                    
+                                    if (impacto) {
+                                        disparosEnemigo[fila][col] = 'H'; // Hit
+                                        mensaje = "¡Impacto! (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
+                                        
+                                        // Verificar si todos los barcos enemigos están hundidos
+                                        if (enemigo.todosLosBarcosHundidos()) {
+                                            estado = JUEGO_TERMINADO;
+                                            juegoTerminado = true;
+                                            mensaje = "¡FELICIDADES! ¡HAS GANADO! Todos los barcos enemigos han sido hundidos.";
+                                        }
+                                    } else {
+                                        disparosEnemigo[fila][col] = 'X'; // Miss
+                                        mensaje = "Agua. (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
+                                    }
                                 }
                             } else {
                                 mensaje = "Ya disparaste ahi!";
                             }
                         }
+                    }
+                }
+            } else if (estado == JUEGO_TERMINADO) {
+                // En el estado de juego terminado, solo permitir cerrar la ventana
+                if (event->is<sf::Event::KeyPressed>()) {
+                    const auto& keyEvent = event->getIf<sf::Event::KeyPressed>();
+                    if (keyEvent && keyEvent->code == sf::Keyboard::Key::Escape) {
+                        window.close();
                     }
                 }
             }
@@ -291,10 +332,31 @@ int main() {
             
             // Dibujar tablero del jugador (más pequeño)
             dibujarTablero(window, celdaPequena, texto, tableroJugador, SMALL_BOARD_OFFSET_X, SMALL_BOARD_OFFSET_Y, SMALL_CELL_SIZE);
+            
+        } else if (estado == JUEGO_TERMINADO) {
+            // Pantalla de victoria
+            textoVictoria.setString("¡VICTORIA!");
+            textoVictoria.setPosition(sf::Vector2f(300, 200));
+            window.draw(textoVictoria);
+            
+            texto.setString("Has hundido todos los barcos enemigos");
+            texto.setPosition(sf::Vector2f(250, 250));
+            window.draw(texto);
+            
+            texto.setString("Presiona ESC para salir");
+            texto.setPosition(sf::Vector2f(300, 300));
+            window.draw(texto);
+            
+            // Mostrar tablero enemigo completo (revelando todos los barcos)
+            textoTitulo.setString("TABLERO ENEMIGO COMPLETO");
+            textoTitulo.setPosition(sf::Vector2f(180, 350));
+            window.draw(textoTitulo);
+            
+            dibujarTablero(window, celdaPequena, texto, tableroEnemigo, SMALL_BOARD_OFFSET_X, 380, SMALL_CELL_SIZE, true, disparosEnemigo);
         }
         
         // Mostrar mensaje de estado
-        if (!mensaje.empty()) {
+        if (!mensaje.empty() && estado != JUEGO_TERMINADO) {
             texto.setString(mensaje);
             texto.setPosition(sf::Vector2f(50, 750));
             window.draw(texto);
