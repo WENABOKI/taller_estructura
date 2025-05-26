@@ -1,0 +1,1 @@
+PS C:\taller_estructura> g++ main.cpp -std=c++17 -Iinclude -Llib -lsfml-graphics -lsfml-window -lsfml-system -o battleship.exe
