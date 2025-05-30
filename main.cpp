@@ -12,11 +12,26 @@ int CELL_SIZE = 40;
 int SMALL_CELL_SIZE = 25;
 int BOARD_SIZE = 10;
 int BOARD_OFFSET_X = 100;
-int BOARD_OFFSET_Y = 50;
+int BOARD_OFFSET_Y = 80;
 int SMALL_BOARD_OFFSET_X = 100;
-int SMALL_BOARD_OFFSET_Y = 500;
+int SMALL_BOARD_OFFSET_Y = 520;
+int SHIP_SELECTION_X = 600;
+int SHIP_SELECTION_Y = 100;
 
 char disparosRealizados[10][10];
+
+struct BarcoSeleccionable {
+    int tamano;
+    bool colocado;
+    sf::RectangleShape rectangulo;
+    sf::Text texto;
+    
+    BarcoSeleccionable(int t, const sf::Font& font) : tamano(t), colocado(false), texto(font) {
+        texto.setCharacterSize(16);
+        texto.setFillColor(sf::Color::White);
+        rectangulo.setOutlineThickness(2);
+    }
+};
 
 void dibujarTablero(sf::RenderWindow& window, sf::RectangleShape& celda, sf::Text& texto, 
                    char tablero[10][10], int offsetX, int offsetY, int cellSize, 
@@ -69,6 +84,60 @@ void dibujarTablero(sf::RenderWindow& window, sf::RectangleShape& celda, sf::Tex
     }
 }
 
+void dibujarSeleccionBarcos(sf::RenderWindow& window, vector<BarcoSeleccionable>& barcos, int barcoSeleccionado, const sf::Font& font) {
+    sf::Text titulo(font);
+    titulo.setCharacterSize(18);
+    titulo.setFillColor(sf::Color::White);
+    titulo.setString("SELECCIONA BARCO:");
+    titulo.setPosition(sf::Vector2f(SHIP_SELECTION_X, SHIP_SELECTION_Y - 30));
+    window.draw(titulo);
+    
+    for (size_t i = 0; i < barcos.size(); i++) {
+        int yPos = SHIP_SELECTION_Y + i * 60;
+        
+        barcos[i].rectangulo.setSize(sf::Vector2f(barcos[i].tamano * 25, 25));
+        barcos[i].rectangulo.setPosition(sf::Vector2f(SHIP_SELECTION_X, yPos));
+        
+        if (barcos[i].colocado) {
+            barcos[i].rectangulo.setFillColor(sf::Color(100, 100, 100));
+            barcos[i].rectangulo.setOutlineColor(sf::Color::Black);
+        } else if (i == static_cast<size_t>(barcoSeleccionado)) {
+            barcos[i].rectangulo.setFillColor(sf::Color::Yellow);
+            barcos[i].rectangulo.setOutlineColor(sf::Color::White);
+        } else {
+            barcos[i].rectangulo.setFillColor(sf::Color::Green);
+            barcos[i].rectangulo.setOutlineColor(sf::Color::White);
+        }
+        
+        window.draw(barcos[i].rectangulo);
+        
+        string textoBarco = "Barco " + to_string(barcos[i].tamano) + " casillas";
+        
+        barcos[i].texto.setString(textoBarco);
+        barcos[i].texto.setPosition(sf::Vector2f(SHIP_SELECTION_X, yPos + 30));
+        
+        if (barcos[i].colocado) {
+            barcos[i].texto.setFillColor(sf::Color(150, 150, 150));
+        } else {
+            barcos[i].texto.setFillColor(sf::Color::White);
+        }
+        
+        window.draw(barcos[i].texto);
+    }
+}
+
+int verificarClickEnBarco(float mouseX, float mouseY, vector<BarcoSeleccionable>& barcos) {
+    for (size_t i = 0; i < barcos.size(); i++) {
+        if (!barcos[i].colocado) {
+            sf::FloatRect bounds = barcos[i].rectangulo.getGlobalBounds();
+            if (bounds.contains({mouseX, mouseY})) {
+                return static_cast<int>(i);
+            }
+        }
+    }
+    return -1;
+}
+
 pair<int, int> obtenerCoordenadas(int mouseX, int mouseY, int offsetX, int offsetY, int cellSize) {
     int col = (mouseX - offsetX) / cellSize;
     int fila = (mouseY - offsetY) / cellSize;
@@ -82,7 +151,7 @@ pair<int, int> obtenerCoordenadas(int mouseX, int mouseY, int offsetX, int offse
 void inicializarTableroEnemigo(Jugador& enemigo, char tablero[10][10]) {
     srand(time(0));
     
-    vector<int> tamanosBarcos = {4, 3, 2, 1};
+    vector<int> tamanosBarcos = {4, 3, 2, 2};
     for (int tamano : tamanosBarcos) {
         bool colocado = false;
         for (int intentos = 0; intentos < 100 && !colocado; intentos++) {
@@ -103,7 +172,7 @@ void inicializarTableroEnemigo(Jugador& enemigo, char tablero[10][10]) {
 }
 
 int main() {
-    sf::RenderWindow window(sf::VideoMode({800u, 800u}), "Battleship - Juego Completo");
+    sf::RenderWindow window(sf::VideoMode({900u, 850u}), "Battleship - Juego Completo");
    
     sf::RectangleShape celda;
     celda.setOutlineThickness(1);
@@ -114,6 +183,11 @@ int main() {
     celdaPequena.setOutlineColor(sf::Color::Black);
    
     sf::Font font;
+    if (!font.openFromFile("ARIAL.TTF")) {
+        cout << "Error: No se pudo cargar la fuente ARIAL.TTF" << endl;
+        return -1; 
+    }
+    
     sf::Text texto(font);
     texto.setCharacterSize(16);
     texto.setFillColor(sf::Color::White);
@@ -142,8 +216,13 @@ int main() {
     
     inicializarTableroEnemigo(enemigo, tableroEnemigo);
     
-    vector<int> tamanosBarcos = {4, 3, 2, 1};
-    int barcoActual = 0;
+    vector<int> tamanosBarcos = {4, 3, 2, 2};
+    vector<BarcoSeleccionable> barcosSeleccionables;
+    for (int tamano : tamanosBarcos) {
+        barcosSeleccionables.emplace_back(tamano, font);
+    }
+    
+    int barcoSeleccionado = 0;
     bool horizontal = true;
     bool todosColocados = false;
     bool juegoTerminado = false;
@@ -169,31 +248,56 @@ int main() {
                 if (event->is<sf::Event::MouseButtonPressed>() && !todosColocados) {
                     const auto& mouseEvent = event->getIf<sf::Event::MouseButtonPressed>();
                     if (mouseEvent && mouseEvent->button == sf::Mouse::Button::Left) {
-                        int mouseX = mouseEvent->position.x;
-                        int mouseY = mouseEvent->position.y;
+                        float mouseX = static_cast<float>(mouseEvent->position.x);
+                        float mouseY = static_cast<float>(mouseEvent->position.y);
                         
-                        pair<int, int> coords = obtenerCoordenadas(mouseX, mouseY, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE);
-                        if (coords.first != -1 && coords.second != -1) {
-                            int fila = coords.first;
-                            int col = coords.second;
-                            
-                            if (jugador.colocarBarco(fila, col, tamanosBarcos[barcoActual], horizontal)) {
-                                for (int i = 0; i < tamanosBarcos[barcoActual]; i++) {
-                                    int f = horizontal ? fila : fila + i;
-                                    int c = horizontal ? col + i : col;
-                                    tableroJugador[f][c] = 'B';
-                                }
+                        int barcoClicado = verificarClickEnBarco(mouseX, mouseY, barcosSeleccionables);
+                        if (barcoClicado != -1) {
+                            barcoSeleccionado = barcoClicado;
+                            mensaje = "Barco de " + to_string(barcosSeleccionables[barcoSeleccionado].tamano) + " casillas seleccionado";
+                        } else {
+                            pair<int, int> coords = obtenerCoordenadas(mouseEvent->position.x, mouseEvent->position.y, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE);
+                            if (coords.first != -1 && coords.second != -1) {
+                                int fila = coords.first;
+                                int col = coords.second;
                                 
-                                barcoActual++;
-                                if (barcoActual >= tamanosBarcos.size()) {
-                                    todosColocados = true;
-                                    estado = JUGANDO;
-                                    mensaje = "¡Comienza el juego! Dispara al tablero enemigo";
-                                } else {
-                                    mensaje = "Barco colocado! Coloca el siguiente (" + to_string(tamanosBarcos[barcoActual]) + " casillas)";
+                                if (!barcosSeleccionables[barcoSeleccionado].colocado) {
+                                    int tamanoBarco = barcosSeleccionables[barcoSeleccionado].tamano;
+                                    
+                                    if (jugador.colocarBarco(fila, col, tamanoBarco, horizontal)) {
+                                        for (int i = 0; i < tamanoBarco; i++) {
+                                            int f = horizontal ? fila : fila + i;
+                                            int c = horizontal ? col + i : col;
+                                            tableroJugador[f][c] = 'B';
+                                        }
+                                        
+                                        barcosSeleccionables[barcoSeleccionado].colocado = true;
+                                        mensaje = "¡Barco colocado exitosamente!";
+                                        
+                                        bool todosBarcosColocados = true;
+                                        for (const auto& barco : barcosSeleccionables) {
+                                            if (!barco.colocado) {
+                                                todosBarcosColocados = false;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if (todosBarcosColocados) {
+                                            todosColocados = true;
+                                            estado = JUGANDO;
+                                            mensaje = "¡Comienza el juego! Dispara al tablero enemigo";
+                                        } else {
+                                            for (size_t i = 0; i < barcosSeleccionables.size(); i++) {
+                                                if (!barcosSeleccionables[i].colocado) {
+                                                    barcoSeleccionado = static_cast<int>(i);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        mensaje = "¡Posición inválida! Intenta en otro lugar";
+                                    }
                                 }
-                            } else {
-                                mensaje = "¡Posición inválida! Intenta en otro lugar";
                             }
                         }
                     }
@@ -248,30 +352,23 @@ int main() {
        
         if (estado == COLOCANDO_BARCOS) {
             textoTitulo.setString("COLOCA TUS BARCOS");
-            textoTitulo.setPosition(sf::Vector2f(250, 10));
+            textoTitulo.setPosition(sf::Vector2f(250, 15));
             window.draw(textoTitulo);
-            
-            if (!todosColocados) {
-                string instruccion = "Coloca barco de " + to_string(tamanosBarcos[barcoActual]) + " casillas";
-                texto.setString(instruccion);
-                texto.setPosition(sf::Vector2f(50, 450));
-                window.draw(texto);
-                
-                string orientacion = horizontal ? "Horizontal" : "Vertical";
-                texto.setString("Orientación: " + orientacion + " (SPACE para cambiar)");
-                texto.setPosition(sf::Vector2f(50, 470));
-                window.draw(texto);
-            }
             
             dibujarTablero(window, celda, texto, tableroJugador, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE, true);
             
+            dibujarSeleccionBarcos(window, barcosSeleccionables, barcoSeleccionado, font);
+            
+            if (!todosColocados) {
+                string orientacion = horizontal ? "Horizontal" : "Vertical";
+                texto.setString("Orientacion: " + orientacion + " (SPACE para cambiar)");
+                texto.setPosition(sf::Vector2f(100, 490));
+                window.draw(texto);
+            }
+            
         } else if (estado == JUGANDO) {
             textoTitulo.setString("TABLERO ENEMIGO - HAZ TUS DISPAROS");
-            textoTitulo.setPosition(sf::Vector2f(150, 10));
-            window.draw(textoTitulo);
-            
-            textoTitulo.setString("TU TABLERO");
-            textoTitulo.setPosition(sf::Vector2f(150, 460));
+            textoTitulo.setPosition(sf::Vector2f(150, 15));
             window.draw(textoTitulo);
             
             dibujarTablero(window, celda, texto, tableroEnemigo, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE, false, (char*)disparosRealizados);
@@ -279,7 +376,7 @@ int main() {
             dibujarTablero(window, celdaPequena, texto, tableroJugador, SMALL_BOARD_OFFSET_X, SMALL_BOARD_OFFSET_Y, SMALL_CELL_SIZE, true);
             
         } else if (estado == JUEGO_TERMINADO) {
-            textoVictoria.setString("¡VICTORIA!");
+            textoVictoria.setString("VICTORIA");
             textoVictoria.setPosition(sf::Vector2f(300, 200));
             window.draw(textoVictoria);
             
@@ -294,7 +391,7 @@ int main() {
         
         if (!mensaje.empty() && estado != JUEGO_TERMINADO) {
             texto.setString(mensaje);
-            texto.setPosition(sf::Vector2f(50, 750));
+            texto.setPosition(sf::Vector2f(50, 780));
             window.draw(texto);
         }
        
