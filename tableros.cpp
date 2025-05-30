@@ -15,7 +15,6 @@ public:
                 celdas[i][j] = '~';
     }
     bool colocarBarco(int fila, int col, int largo, bool horizontal) {
-        // MEJORA: Validar límites negativos y largo inválido
         if (fila < 0 || col < 0 || largo <= 0) {
             return false;
         }
