@@ -272,7 +272,6 @@ int main() {
                                         }
                                         
                                         barcosSeleccionables[barcoSeleccionado].colocado = true;
-                                        mensaje = "¡Barco colocado exitosamente!";
                                         
                                         bool todosBarcosColocados = true;
                                         for (const auto& barco : barcosSeleccionables) {
@@ -285,7 +284,6 @@ int main() {
                                         if (todosBarcosColocados) {
                                             todosColocados = true;
                                             estado = JUGANDO;
-                                            mensaje = "¡Comienza el juego! Dispara al tablero enemigo";
                                         } else {
                                             for (size_t i = 0; i < barcosSeleccionables.size(); i++) {
                                                 if (!barcosSeleccionables[i].colocado) {
@@ -294,8 +292,6 @@ int main() {
                                                 }
                                             }
                                         }
-                                    } else {
-                                        mensaje = "¡Posición inválida! Intenta en otro lugar";
                                     }
                                 }
                             }
@@ -320,20 +316,16 @@ int main() {
                                     
                                     if (impacto) {
                                         disparosRealizados[fila][col] = 'H'; 
-                                        mensaje = "¡IMPACTO! (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
                                         
                                         if (enemigo.todosLosBarcosHundidos()) {
                                             estado = JUEGO_TERMINADO;
                                             juegoTerminado = true;
-                                            mensaje = "¡FELICIDADES! ¡HAS GANADO! Todos los barcos enemigos han sido hundidos.";
                                         }
                                     } else {
                                         disparosRealizados[fila][col] = 'X'; 
-                                        mensaje = "Agua... (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
                                     }
                                 }
                             } else {
-                                mensaje = "¡Ya disparaste ahí! Elige otra posición";
                             }
                         }
                     }
