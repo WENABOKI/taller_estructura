@@ -2,7 +2,6 @@
 #include "tableros.cpp"
 #include "disparos.cpp"
 using namespace std;
-
 class Jugador {
 private:
     Tablero tablero;
@@ -11,25 +10,21 @@ private:
 public:
     Jugador() {
     }    
-    
+   
     bool colocarBarco(int fila, int col, int largo, bool horizontal) {
         return tablero.colocarBarco(fila, col, largo, horizontal);
     }
-
     bool recibirDisparo(int fila, int col) {
         return tablero.disparar(fila, col);
     }
-
+    
+    // CAMBIO: Usar el método fusionado de ListaDisparos
     bool registrarDisparo(int fila, int col) {
-        if (disparos.contiene(fila, col)) {
-            return false;
-        }
-        disparos.agregarDisparo(fila, col);
-        return true;
+        return disparos.registrarDisparo(fila, col);
     }
-
+    
     bool todosLosBarcosHundidos() {
         return tablero.todosLosBarcosHundidos();
     }
-    
+   
 };

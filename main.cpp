@@ -16,37 +16,59 @@ int BOARD_OFFSET_Y = 50;
 int SMALL_BOARD_OFFSET_X = 100;
 int SMALL_BOARD_OFFSET_Y = 500;
 
+// Necesitamos agregar métodos para acceder al estado interno de los tableros
+// Por ahora, usaremos arrays para tracking de disparos realizados
+char disparosRealizados[10][10];
+
 void dibujarTablero(sf::RenderWindow& window, sf::RectangleShape& celda, sf::Text& texto, 
                    char tablero[10][10], int offsetX, int offsetY, int cellSize, 
-                   bool mostrarBarcos = true, char disparos[10][10] = nullptr) {
+                   bool mostrarBarcos = true, char* disparosArray = nullptr) {
     
+    // Dibujar etiquetas de columnas (A-J)
     for (int j = 0; j < BOARD_SIZE; j++) {
         texto.setString(string(1, 'A' + j));
         texto.setPosition(sf::Vector2f(offsetX + j * cellSize + cellSize/2 - 5, offsetY - 30));
         window.draw(texto);
     }
    
+    // Dibujar etiquetas de filas (1-10)
     for (int i = 0; i < BOARD_SIZE; i++) {
         texto.setString(to_string(i + 1));
         texto.setPosition(sf::Vector2f(offsetX - 30, offsetY + i * cellSize + cellSize/2 - 8));
         window.draw(texto);
     }
    
+    // Dibujar celdas del tablero
     for (int i = 0; i < BOARD_SIZE; i++) {
         for (int j = 0; j < BOARD_SIZE; j++) {
             celda.setSize(sf::Vector2f(cellSize - 2, cellSize - 2));
             celda.setPosition(sf::Vector2f(offsetX + j * cellSize, offsetY + i * cellSize));
             
-            if (disparos != nullptr && disparos[i][j] == 'X') {
-                celda.setFillColor(sf::Color::Red);
-            } else if (disparos != nullptr && disparos[i][j] == 'H') {
-                celda.setFillColor(sf::Color::Yellow);
-            } else if (tablero[i][j] == '~') {
-                celda.setFillColor(sf::Color::Blue);  
-            } else if (tablero[i][j] == 'B' && mostrarBarcos) {
-                celda.setFillColor(sf::Color::Green); 
+            // Si hay array de disparos, priorizarlo para mostrar resultados
+            if (disparosArray != nullptr) {
+                char* disparos2D = (char*)disparosArray;
+                char estadoDisparo = disparos2D[i * 10 + j];
+                
+                if (estadoDisparo == 'H') {
+                    celda.setFillColor(sf::Color::Red);  // Impacto
+                } else if (estadoDisparo == 'X') {
+                    celda.setFillColor(sf::Color::Yellow);  // Agua
+                } else if (tablero[i][j] == 'B' && mostrarBarcos) {
+                    celda.setFillColor(sf::Color::Green);  // Barco
+                } else {
+                    celda.setFillColor(sf::Color::Blue);  // Agua/Sin disparar
+                }
             } else {
-                celda.setFillColor(sf::Color::Blue);  
+                // Sin array de disparos, mostrar solo el estado base del tablero
+                if (tablero[i][j] == 'B' && mostrarBarcos) {
+                    celda.setFillColor(sf::Color::Green);  // Barco
+                } else if (tablero[i][j] == 'X') {
+                    celda.setFillColor(sf::Color::Red);    // Impacto
+                } else if (tablero[i][j] == 'O') {
+                    celda.setFillColor(sf::Color::Yellow); // Agua disparada
+                } else {
+                    celda.setFillColor(sf::Color::Blue);   // Agua normal
+                }
             }
             
             window.draw(celda);
@@ -64,44 +86,8 @@ pair<int, int> obtenerCoordenadas(int mouseX, int mouseY, int offsetX, int offse
     return make_pair(-1, -1);
 }
 
-bool colocarBarcoAleatorio(char tablero[10][10], int tamano) {
-    srand(time(0) + rand()); 
-    
-    for (int intentos = 0; intentos < 100; intentos++) {
-        int fila = rand() % BOARD_SIZE;
-        int col = rand() % BOARD_SIZE;
-        bool horizontal = rand() % 2;
-        
-        bool puedeColocar = true;
-        
-        for (int i = 0; i < tamano; i++) {
-            int f = horizontal ? fila : fila + i;
-            int c = horizontal ? col + i : col;
-            
-            if (f >= BOARD_SIZE || c >= BOARD_SIZE || tablero[f][c] != '~') {
-                puedeColocar = false;
-                break;
-            }
-        }
-        
-        if (puedeColocar) {
-            for (int i = 0; i < tamano; i++) {
-                int f = horizontal ? fila : fila + i;
-                int c = horizontal ? col + i : col;
-                tablero[f][c] = 'B';
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-void inicializarTableroEnemigo(char tablero[10][10], Jugador& enemigo) {
-    for (int i = 0; i < 10; i++) {
-        for (int j = 0; j < 10; j++) {
-            tablero[i][j] = '~';
-        }
-    }
+void inicializarTableroEnemigo(Jugador& enemigo, char tablero[10][10]) {
+    srand(time(0));
     
     vector<int> tamanosBarcos = {4, 3, 2, 1};
     for (int tamano : tamanosBarcos) {
@@ -112,6 +98,7 @@ void inicializarTableroEnemigo(char tablero[10][10], Jugador& enemigo) {
             bool horizontal = rand() % 2;
             
             if (enemigo.colocarBarco(fila, col, tamano, horizontal)) {
+                // Actualizar representación visual
                 for (int i = 0; i < tamano; i++) {
                     int f = horizontal ? fila : fila + i;
                     int c = horizontal ? col + i : col;
@@ -147,22 +134,27 @@ int main() {
     textoVictoria.setCharacterSize(30);
     textoVictoria.setFillColor(sf::Color::Green);
     
+    // Crear jugadores
     Jugador jugador;
     Jugador enemigo;
+    
+    // Crear arrays para representación visual de los tableros
     char tableroJugador[10][10];
     char tableroEnemigo[10][10];
-    char disparosEnemigo[10][10]; 
     
+    // Inicializar tableros
     for (int i = 0; i < 10; i++) {
         for (int j = 0; j < 10; j++) {
             tableroJugador[i][j] = '~';
-            disparosEnemigo[i][j] = '~';
+            tableroEnemigo[i][j] = '~';
+            disparosRealizados[i][j] = '~';
         }
     }
     
-    srand(time(0));
-    inicializarTableroEnemigo(tableroEnemigo, enemigo);
+    // Inicializar tablero enemigo con barcos aleatorios
+    inicializarTableroEnemigo(enemigo, tableroEnemigo);
     
+    // Variables de estado del juego
     vector<int> tamanosBarcos = {4, 3, 2, 1};
     int barcoActual = 0;
     bool horizontal = true;
@@ -180,6 +172,7 @@ int main() {
             }
             
             if (estado == COLOCANDO_BARCOS) {
+                // Cambiar orientación con SPACE
                 if (event->is<sf::Event::KeyPressed>() && !todosColocados) {
                     const auto& keyEvent = event->getIf<sf::Event::KeyPressed>();
                     if (keyEvent && keyEvent->code == sf::Keyboard::Key::Space) {
@@ -187,6 +180,7 @@ int main() {
                     }
                 }
                 
+                // Colocar barco con click izquierdo
                 if (event->is<sf::Event::MouseButtonPressed>() && !todosColocados) {
                     const auto& mouseEvent = event->getIf<sf::Event::MouseButtonPressed>();
                     if (mouseEvent && mouseEvent->button == sf::Mouse::Button::Left) {
@@ -199,6 +193,7 @@ int main() {
                             int col = coords.second;
                             
                             if (jugador.colocarBarco(fila, col, tamanosBarcos[barcoActual], horizontal)) {
+                                // Actualizar representación visual del tablero del jugador
                                 for (int i = 0; i < tamanosBarcos[barcoActual]; i++) {
                                     int f = horizontal ? fila : fila + i;
                                     int c = horizontal ? col + i : col;
@@ -211,15 +206,16 @@ int main() {
                                     estado = JUGANDO;
                                     mensaje = "¡Comienza el juego! Dispara al tablero enemigo";
                                 } else {
-                                    mensaje = "";
+                                    mensaje = "Barco colocado! Coloca el siguiente (" + to_string(tamanosBarcos[barcoActual]) + " casillas)";
                                 }
                             } else {
-                                mensaje = "Posicion invalida!";
+                                mensaje = "¡Posición inválida! Intenta en otro lugar";
                             }
                         }
                     }
                 }
             } else if (estado == JUGANDO) {
+                // Realizar disparo con click izquierdo
                 if (event->is<sf::Event::MouseButtonPressed>()) {
                     const auto& mouseEvent = event->getIf<sf::Event::MouseButtonPressed>();
                     if (mouseEvent && mouseEvent->button == sf::Mouse::Button::Left) {
@@ -231,31 +227,34 @@ int main() {
                             int fila = coords.first;
                             int col = coords.second;
                             
-                            if (disparosEnemigo[fila][col] == '~') {
+                            // Verificar que no se haya disparado ya en esa posición
+                            if (disparosRealizados[fila][col] == '~') {
                                 if (jugador.registrarDisparo(fila, col)) {
                                     bool impacto = enemigo.recibirDisparo(fila, col);
                                     
                                     if (impacto) {
-                                        disparosEnemigo[fila][col] = 'H'; 
-                                        mensaje = "¡Impacto! (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
+                                        disparosRealizados[fila][col] = 'H'; // Impacto
+                                        mensaje = "¡IMPACTO! (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
                                         
+                                        // Verificar si ganó el juego
                                         if (enemigo.todosLosBarcosHundidos()) {
                                             estado = JUEGO_TERMINADO;
                                             juegoTerminado = true;
                                             mensaje = "¡FELICIDADES! ¡HAS GANADO! Todos los barcos enemigos han sido hundidos.";
                                         }
                                     } else {
-                                        disparosEnemigo[fila][col] = 'X'; 
-                                        mensaje = "Agua. (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
+                                        disparosRealizados[fila][col] = 'X'; // Agua
+                                        mensaje = "Agua... (" + string(1, 'A' + col) + to_string(fila + 1) + ")";
                                     }
                                 }
                             } else {
-                                mensaje = "Ya disparaste ahi!";
+                                mensaje = "¡Ya disparaste ahí! Elige otra posición";
                             }
                         }
                     }
                 }
             } else if (estado == JUEGO_TERMINADO) {
+                // Salir con ESC
                 if (event->is<sf::Event::KeyPressed>()) {
                     const auto& keyEvent = event->getIf<sf::Event::KeyPressed>();
                     if (keyEvent && keyEvent->code == sf::Keyboard::Key::Escape) {
@@ -265,10 +264,10 @@ int main() {
             }
         }
        
+        // RENDERIZADO
         window.clear(sf::Color::Black);
        
         if (estado == COLOCANDO_BARCOS) {
-            
             textoTitulo.setString("COLOCA TUS BARCOS");
             textoTitulo.setPosition(sf::Vector2f(250, 10));
             window.draw(textoTitulo);
@@ -280,25 +279,27 @@ int main() {
                 window.draw(texto);
                 
                 string orientacion = horizontal ? "Horizontal" : "Vertical";
-                texto.setString("Orientacion: " + orientacion + " (SPACE para cambiar)");
+                texto.setString("Orientación: " + orientacion + " (SPACE para cambiar)");
                 texto.setPosition(sf::Vector2f(50, 470));
                 window.draw(texto);
             }
             
-            dibujarTablero(window, celda, texto, tableroJugador, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE);
+            dibujarTablero(window, celda, texto, tableroJugador, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE, true);
             
         } else if (estado == JUGANDO) {
-            textoTitulo.setString("TABLERO ENEMIGO");
-            textoTitulo.setPosition(sf::Vector2f(200, 10));
+            textoTitulo.setString("TABLERO ENEMIGO - HAZ TUS DISPAROS");
+            textoTitulo.setPosition(sf::Vector2f(150, 10));
             window.draw(textoTitulo);
             
             textoTitulo.setString("TU TABLERO");
             textoTitulo.setPosition(sf::Vector2f(150, 460));
             window.draw(textoTitulo);
             
-            dibujarTablero(window, celda, texto, tableroEnemigo, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE, false, disparosEnemigo);
+            // Dibujar tablero enemigo (sin mostrar barcos, con disparos)
+            dibujarTablero(window, celda, texto, tableroEnemigo, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE, false, (char*)disparosRealizados);
             
-            dibujarTablero(window, celdaPequena, texto, tableroJugador, SMALL_BOARD_OFFSET_X, SMALL_BOARD_OFFSET_Y, SMALL_CELL_SIZE);
+            // Dibujar tablero del jugador (pequeño, abajo, mostrando barcos)
+            dibujarTablero(window, celdaPequena, texto, tableroJugador, SMALL_BOARD_OFFSET_X, SMALL_BOARD_OFFSET_Y, SMALL_CELL_SIZE, true);
             
         } else if (estado == JUEGO_TERMINADO) {
             textoVictoria.setString("¡VICTORIA!");
@@ -312,14 +313,9 @@ int main() {
             texto.setString("Presiona ESC para salir");
             texto.setPosition(sf::Vector2f(300, 300));
             window.draw(texto);
-            
-            textoTitulo.setString("TABLERO ENEMIGO COMPLETO");
-            textoTitulo.setPosition(sf::Vector2f(180, 350));
-            window.draw(textoTitulo);
-            
-            dibujarTablero(window, celdaPequena, texto, tableroEnemigo, SMALL_BOARD_OFFSET_X, 380, SMALL_CELL_SIZE, true, disparosEnemigo);
         }
         
+        // Mostrar mensajes de estado
         if (!mensaje.empty() && estado != JUEGO_TERMINADO) {
             texto.setString(mensaje);
             texto.setPosition(sf::Vector2f(50, 750));

@@ -1,13 +1,11 @@
 #include <iostream>
 using namespace std;
-
 struct Nodo
 {
     int fila;
     int col;
     Nodo* siguiente;
 };
-
 class ListaDisparos {
 private:
     Nodo* cabeza;
@@ -15,7 +13,6 @@ public:
     ListaDisparos(){
         cabeza = nullptr;
     }
-
     ~ListaDisparos(){
         Nodo* actual = cabeza;
         while (actual != nullptr) {
@@ -24,13 +21,21 @@ public:
             delete temp;
         }
     }
-
-    void agregarDisparo(int fila, int col){
+    
+    bool registrarDisparo(int fila, int col){
+        Nodo* actual = cabeza;
+        while(actual != nullptr){
+            if(actual->fila == fila && actual->col == col){
+                return false;
+            }
+            actual = actual->siguiente;
+        }
+        
         Nodo* disparo = new Nodo;
         disparo->fila = fila;
         disparo->col = col;
         disparo->siguiente = nullptr;  
-        
+       
         if (cabeza == nullptr) {
             cabeza = disparo;
         } else {
@@ -40,16 +45,7 @@ public:
             }
             temp->siguiente = disparo;
         }
+        
+        return true; 
     }
-
-    bool contiene(int fila, int col){
-        Nodo* actual = cabeza;
-        while(actual != nullptr){
-            if(actual->fila == fila && actual->col == col){
-                return true;
-            }
-            actual = actual->siguiente;
-        }
-        return false;
-    }
-};  
+};
