@@ -18,7 +18,6 @@ public:
         return tablero.disparar(fila, col);
     }
     
-    // CAMBIO: Usar el método fusionado de ListaDisparos
     bool registrarDisparo(int fila, int col) {
         return disparos.registrarDisparo(fila, col);
     }
