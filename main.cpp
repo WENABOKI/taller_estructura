@@ -268,7 +268,7 @@ int main() {
     
     Jugador jugador;
     Jugador enemigo;
-    IABattleship ia; 
+    JugadorIA ia; // Changed from IABattleship to JugadorIA
     
     char tableroJugador[10][10];
     char tableroEnemigo[10][10];
@@ -475,11 +475,14 @@ int main() {
         
         if (estado == JUGANDO && !turnoJugador && esperandoTurnoIA && !juegoTerminado) {
             if (clockIA.getElapsedTime().asSeconds() > 1.0f) { 
-                EstadoJuego estadoIA = crearEstadoParaIA(tableroJugador, tableroEnemigo, disparosJugador, disparosIA, false);
-                Movimiento movIA = ia.decidirMovimiento(estadoIA);
+                // Use the decidirDisparo method instead of decidirMovimiento
+                Movimiento movIA = ia.decidirDisparo();
                 
                 if (movIA.fila != -1 && movIA.col != -1) {
                     bool impacto = jugador.recibirDisparo(movIA.fila, movIA.col);
+                    
+                    // Process the result in the IA
+                    ia.procesarResultadoDisparo(movIA.fila, movIA.col, impacto, false);
                     
                     if (impacto) {
                         disparosIA[movIA.fila][movIA.col] = 'H';
@@ -498,6 +501,7 @@ int main() {
                         esperandoTurnoIA = false;
                     }
                 } else {
+                    // Fallback to random if IA fails
                     int fila, col;
                     do {
                         fila = rand() % 10;

@@ -82,4 +82,10 @@ public:
         }
         return true;
     }
+    char obtenerCelda(int fila, int col) const {
+        if (fila < 0 || fila >= 10 || col < 0 || col >= 10) {
+            return '?';
+        }
+        return celdas[fila][col];
+    }
 };
