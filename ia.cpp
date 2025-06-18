@@ -9,7 +9,7 @@
 #include "estructuras.h"
 using namespace std;
 
-class NodoDecision {
+struct NodoDecision {
 public:
     string estrategia;
     string condicion;
