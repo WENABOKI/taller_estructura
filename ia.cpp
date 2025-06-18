@@ -61,23 +61,15 @@ public:
     void calcularProbabilidadesIniciales() {
         for (int i = 0; i < 10; i++) {
             for (int j = 0; j < 10; j++) {
-                // Probabilidad base uniforme para todas las casillas
                 probabilidades[i][j] = PROB_BASE;
                 
-                // Patrón de tablero de ajedrez más prominente
                 if ((i + j) % 2 == 0) {
-                    probabilidades[i][j] += 25;  // Aumentado significativamente
+                    probabilidades[i][j] += 25;  
                 }
                 
-                // ELIMINADO: Bonus por proximidad al centro
-                // ELIMINADO: Penalización para bordes y esquinas
-                // ELIMINADO: Bonus para zona central estratégica
-                
-                // Pequeña variación aleatoria para evitar patrones demasiado rígidos
-                int variacion = (rand() % 11) - 5;  // -5 a +5
+                int variacion = (rand() % 11) - 5;  
                 probabilidades[i][j] += variacion;
                 
-                // Asegurar que las probabilidades estén en un rango razonable
                 probabilidades[i][j] = max(30, min(100, probabilidades[i][j]));
             }
         }
@@ -248,7 +240,6 @@ public:
     int calcularProbabilidadImpacto(int fila, int col, const char disparos[10][10]) {
         int probabilidad = probabilidades[fila][col];
         
-        // Aumentar probabilidad si hay impactos adyacentes
         for (auto& dir : direcciones) {
             int ni = fila + dir.first;
             int nj = col + dir.second;
@@ -257,7 +248,6 @@ public:
             }
         }
         
-        // Normalizar a 0-100
         return min(95, max(5, probabilidad * 100 / 200));
     }
     
@@ -446,7 +436,6 @@ public:
         return movimientos;
     }
     
-    // FUNCIÓN ACTUALIZADA: Eliminada la penalización de bordes/esquinas y el sesgo central
     void actualizarProbabilidadesPorTiempo(const char disparos[10][10]) {
         totalDisparos = 0;
         for (int i = 0; i < 10; i++) {
@@ -457,28 +446,18 @@ public:
             }
         }
         
-        // Recalcular probabilidades sin sesgos de posición
         for (int i = 0; i < 10; i++) {
             for (int j = 0; j < 10; j++) {
                 if (disparos[i][j] == '~') {
-                    // Probabilidad base uniforme
                     probabilidades[i][j] = PROB_BASE;
                     
-                    // Patrón de tablero de ajedrez consistente
                     if ((i + j) % 2 == 0) {
                         probabilidades[i][j] += 25;
                     }
                     
-                    // ELIMINADO: Bonus por proximidad al centro
-                    // ELIMINADO: Penalización para bordes y esquinas
-                    // ELIMINADO: Bonus para zona central estratégica
-                    // ELIMINADO: Bonus tardío para esquinas
-                    
-                    // Pequeña variación aleatoria
-                    int variacion = (rand() % 11) - 5;  // -5 a +5
+                    int variacion = (rand() % 11) - 5;  
                     probabilidades[i][j] += variacion;
                     
-                    // Mantener probabilidades en rango razonable
                     probabilidades[i][j] = max(30, min(100, probabilidades[i][j]));
                 }
             }
