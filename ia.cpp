@@ -28,7 +28,7 @@ public:
 
 class IABattleship {
 private:
-    static constexpr int PROFUNDIDAD_MINIMAX = 2;
+    static constexpr int PROFUNDIDAD_MINIMAX = 3;
     static constexpr int MAX_CANDIDATOS = 6;
     static constexpr int PROB_BASE = 50;
     
@@ -39,6 +39,8 @@ private:
     
     mutable unordered_map<string, int> cache;
     int totalDisparos;
+    int nodosEvaluados;
+    int podasRealizadas;
     vector<pair<int, int>> direcciones = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
 
 public:
@@ -46,6 +48,8 @@ public:
         inicializar();
         construirArbolDecision();
         srand(time(0));
+        nodosEvaluados = 0;
+        podasRealizadas = 0;
     }
     
     ~IABattleship() {
@@ -129,6 +133,9 @@ public:
     }
     
     Movimiento decidirMovimiento(const EstadoJuego& estado) {
+        nodosEvaluados = 0;
+        podasRealizadas = 0;
+        
         string estrategia = seleccionarEstrategia(estado.disparosIA);
         vector<Movimiento> candidatos = generarCandidatos(estado, estrategia);
         
@@ -198,6 +205,8 @@ public:
         return candidatos;
     }
     
+    // ===== MINIMAX REAL CON PODA ALPHA-BETA =====
+    
     Movimiento aplicarMinimax(const EstadoJuego& estado, vector<Movimiento>& candidatos) {
         if (candidatos.size() == 1) {
             return candidatos[0];
@@ -213,7 +222,18 @@ public:
             if (cache.find(cacheKey) != cache.end()) {
                 valor = cache[cacheKey];
             } else {
-                int valor = evaluarMovimientoProbabilistico(estado, candidato);
+                // MINIMAX REAL: Evaluar ambos escenarios (impacto y fallo)
+                int probImpacto = calcularProbabilidadImpacto(candidato.fila, candidato.col, estado.disparosIA);
+                
+                EstadoJuego escenarioImpacto = estado;
+                escenarioImpacto.disparosIA[candidato.fila][candidato.col] = 'H';
+                int valorImpacto = minimax(escenarioImpacto, PROFUNDIDAD_MINIMAX - 1, false, INT_MIN, INT_MAX);
+                
+                EstadoJuego escenarioFallo = estado;
+                escenarioFallo.disparosIA[candidato.fila][candidato.col] = 'X';
+                int valorFallo = minimax(escenarioFallo, PROFUNDIDAD_MINIMAX - 1, false, INT_MIN, INT_MAX);
+                
+                valor = (probImpacto * valorImpacto + (100 - probImpacto) * valorFallo) / 100;
                 cache[cacheKey] = valor;
             }
             
@@ -226,53 +246,11 @@ public:
         return mejorMovimiento;
     }
     
-    int evaluarMovimientoProbabilistico(const EstadoJuego& estado, const Movimiento& mov) {
-        int probImpacto = calcularProbabilidadImpacto(mov.fila, mov.col, estado.disparosIA);
-        
-        int valorImpacto = simularEscenarioImpacto(estado, mov);
-        int valorFallo = simularEscenarioFallo(estado, mov);
-        
-        int valorEsperado = (probImpacto * valorImpacto + (100 - probImpacto) * valorFallo) / 100;
-        
-        return valorEsperado;
-    }
-    
-    int calcularProbabilidadImpacto(int fila, int col, const char disparos[10][10]) {
-        int probabilidad = probabilidades[fila][col];
-        
-        for (auto& dir : direcciones) {
-            int ni = fila + dir.first;
-            int nj = col + dir.second;
-            if (esValidaYImpacto(ni, nj, disparos) && !estaHundido(ni, nj)) {
-                probabilidad += 30;
-            }
-        }
-        
-        return min(95, max(5, probabilidad * 100 / 200));
-    }
-    
-    int simularEscenarioImpacto(const EstadoJuego& estado, const Movimiento& mov) {
-        EstadoJuego escenario = estado;
-        escenario.disparosIA[mov.fila][mov.col] = 'H';
-        
-        int valor = evaluarEstado(escenario);
-        
-        if (tieneImpactoAdyacente(estado.disparosIA, mov.fila, mov.col)) {
-            valor += 50;
-        }
-        
-        return valor;
-    }
-    
-    int simularEscenarioFallo(const EstadoJuego& estado, const Movimiento& mov) {
-        EstadoJuego escenario = estado;
-        escenario.disparosIA[mov.fila][mov.col] = 'X';
-        
-        return evaluarEstado(escenario);
-    }
-    
     int minimax(const EstadoJuego& estado, int profundidad, bool maximizando, int alpha, int beta) {
-        if (profundidad == 0) {
+        nodosEvaluados++;
+        
+        // Casos base
+        if (profundidad == 0 || juegoTerminado(estado)) {
             return evaluarEstado(estado);
         }
         
@@ -283,25 +261,144 @@ public:
         }
         
         if (maximizando) {
+            // IA intenta maximizar su puntuación
             int maxEval = INT_MIN;
+            
             for (auto& mov : movimientos) {
-                int eval = evaluarMovimientoProbabilistico(estado, mov);
+                EstadoJuego nuevoEstado = estado;
+                
+                // Simular el movimiento de la IA
+                if (esMovimientoPrometedor(mov, estado)) {
+                    nuevoEstado.disparosIA[mov.fila][mov.col] = 'H';
+                } else {
+                    nuevoEstado.disparosIA[mov.fila][mov.col] = 'X';
+                }
+                
+                int eval = minimax(nuevoEstado, profundidad - 1, false, alpha, beta);
                 maxEval = max(maxEval, eval);
                 alpha = max(alpha, eval);
-                if (beta <= alpha) break; 
+                
+                // PODA ALPHA-BETA
+                if (beta <= alpha) {
+                    podasRealizadas++;
+                    break;
+                }
             }
             return maxEval;
+            
         } else {
+            // Minimizador: simula respuesta del oponente o escenarios desfavorables
             int minEval = INT_MAX;
+            
             for (auto& mov : movimientos) {
-                int eval = evaluarMovimientoProbabilistico(estado, mov);
+                EstadoJuego nuevoEstado = estado;
+                
+                // El oponente intenta contraatacar
+                if (mov.fila < 10 && mov.col < 10 && estado.disparosJugador[mov.fila][mov.col] == '~') {
+                    nuevoEstado.disparosJugador[mov.fila][mov.col] = 'H';
+                }
+                
+                int eval = minimax(nuevoEstado, profundidad - 1, true, alpha, beta);
                 minEval = min(minEval, eval);
                 beta = min(beta, eval);
-                if (beta <= alpha) break; 
+                
+                // PODA ALPHA-BETA
+                if (beta <= alpha) {
+                    podasRealizadas++;
+                    break;
+                }
             }
             return minEval;
         }
     }
+    
+    // ===== FUNCIONES AUXILIARES PARA MINIMAX =====
+    
+    bool juegoTerminado(const EstadoJuego& estado) {
+        int impactosIA = 0;
+        int impactosJugador = 0;
+        
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                if (estado.disparosIA[i][j] == 'H') impactosIA++;
+                if (estado.disparosJugador[i][j] == 'H') impactosJugador++;
+            }
+        }
+        
+        return impactosIA >= 17 || impactosJugador >= 17; // Total casillas de barcos
+    }
+    
+    bool esMovimientoPrometedor(const Movimiento& mov, const EstadoJuego& estado) {
+        int probabilidad = calcularProbabilidadImpacto(mov.fila, mov.col, estado.disparosIA);
+        
+        bool tieneImpactosCerca = false;
+        for (auto& dir : direcciones) {
+            int ni = mov.fila + dir.first;
+            int nj = mov.col + dir.second;
+            if (esValidaYImpacto(ni, nj, estado.disparosIA) && !estaHundido(ni, nj)) {
+                tieneImpactosCerca = true;
+                break;
+            }
+        }
+        
+        return probabilidad > 60 || tieneImpactosCerca;
+    }
+    
+    vector<Movimiento> generarMovimientosRapidos(const EstadoJuego& estado, bool paraIA) {
+        vector<Movimiento> movimientos;
+        
+        if (paraIA) {
+            // Maximizador: generar movimientos ofensivos para la IA
+            for (int i = 0; i < 10; i++) {
+                for (int j = 0; j < 10; j++) {
+                    if (estado.disparosIA[i][j] == '~') {
+                        int puntuacion = calcularPuntuacion(i, j, estado.disparosIA);
+                        movimientos.push_back(Movimiento(i, j, puntuacion));
+                    }
+                }
+            }
+        } else {
+            // Minimizador: generar contraataques del oponente
+            for (int i = 0; i < 10; i++) {
+                for (int j = 0; j < 10; j++) {
+                    if (estado.disparosJugador[i][j] == '~') {
+                        int puntuacion = calcularPuntuacionDefensiva(i, j, estado);
+                        movimientos.push_back(Movimiento(i, j, puntuacion));
+                    }
+                }
+            }
+        }
+        
+        sort(movimientos.begin(), movimientos.end(),
+             [](const Movimiento& a, const Movimiento& b) {
+                 return a.valor > b.valor;
+             });
+        
+        if (movimientos.size() > MAX_CANDIDATOS) {
+            movimientos.resize(MAX_CANDIDATOS);
+        }
+        
+        return movimientos;
+    }
+    
+    int calcularPuntuacionDefensiva(int fila, int col, const EstadoJuego& estado) {
+        int puntuacion = 50;
+        
+        // Simular lógica del oponente
+        for (auto& dir : direcciones) {
+            int ni = fila + dir.first;
+            int nj = col + dir.second;
+            if (ni >= 0 && ni < 10 && nj >= 0 && nj < 10) {
+                if (estado.disparosJugador[ni][nj] == 'H') {
+                    puntuacion += 80;
+                }
+            }
+        }
+        
+        return puntuacion;
+    }
+    
+    // ===== FUNCIONES DE EVALUACIÓN =====
     
     int evaluarEstado(const EstadoJuego& estado) {
         int puntuacion = 0;
@@ -327,6 +424,22 @@ public:
         
         return puntuacion;
     }
+    
+    int calcularProbabilidadImpacto(int fila, int col, const char disparos[10][10]) {
+        int probabilidad = probabilidades[fila][col];
+        
+        for (auto& dir : direcciones) {
+            int ni = fila + dir.first;
+            int nj = col + dir.second;
+            if (esValidaYImpacto(ni, nj, disparos) && !estaHundido(ni, nj)) {
+                probabilidad += 30;
+            }
+        }
+        
+        return min(95, max(5, probabilidad * 100 / 200));
+    }
+    
+    // ===== FUNCIONES DE ANÁLISIS DE ESTADO =====
     
     bool hayImpactosSinHundir(const char disparos[10][10]) {
         for (int i = 0; i < 10; i++) {
@@ -411,29 +524,22 @@ public:
         return puntuacion;
     }
     
-    vector<Movimiento> generarMovimientosRapidos(const EstadoJuego& estado, bool paraIA) {
-        vector<Movimiento> movimientos;
-        const char (*disparos)[10] = paraIA ? estado.disparosIA : estado.disparosJugador;
+    // ===== FUNCIONES AUXILIARES =====
+    
+    string generarClave(const EstadoJuego& estado, const Movimiento& mov) {
+        string clave = to_string(mov.fila) + "," + to_string(mov.col) + ",";
         
+        int hash = 0;
         for (int i = 0; i < 10; i++) {
             for (int j = 0; j < 10; j++) {
-                if (disparos[i][j] == '~') {
-                    int puntuacion = calcularPuntuacion(i, j, disparos);
-                    movimientos.push_back(Movimiento(i, j, puntuacion));
+                if (estado.disparosIA[i][j] == 'H') {
+                    hash += i * 10 + j;
                 }
             }
         }
         
-        sort(movimientos.begin(), movimientos.end(),
-             [](const Movimiento& a, const Movimiento& b) {
-                 return a.valor > b.valor;
-             });
-        
-        if (movimientos.size() > 6) {
-            movimientos.resize(6);
-        }
-        
-        return movimientos;
+        clave += to_string(hash);
+        return clave;
     }
     
     void actualizarProbabilidadesPorTiempo(const char disparos[10][10]) {
@@ -464,21 +570,16 @@ public:
         }
     }
     
-    string generarClave(const EstadoJuego& estado, const Movimiento& mov) {
-        string clave = to_string(mov.fila) + "," + to_string(mov.col) + ",";
-        
-        int hash = 0;
-        for (int i = 0; i < 10; i++) {
-            for (int j = 0; j < 10; j++) {
-                if (estado.disparosIA[i][j] == 'H') {
-                    hash += i * 10 + j;
-                }
-            }
-        }
-        
-        clave += to_string(hash);
-        return clave;
+    // ===== MÉTRICAS DE RENDIMIENTO =====
+    
+    void mostrarEstadisticas() {
+        cout << "=== ESTADÍSTICAS DE MINIMAX ===" << endl;
+        cout << "Nodos evaluados: " << nodosEvaluados << endl;
+        cout << "Podas realizadas: " << podasRealizadas << endl;
+        cout << "Eficiencia: " << (double)podasRealizadas/nodosEvaluados * 100 << "%" << endl;
     }
+    
+    // ===== GESTIÓN DE BARCOS HUNDIDOS =====
     
     void procesarBarcoHundido(const char tablero[10][10], char disparos[10][10], int fila, int col) {
         vector<pair<int, int>> casillasBarco = encontrarBarcoCompleto(disparos, fila, col);
@@ -487,7 +588,7 @@ public:
             barcosHundidos.push_back(casillasBarco);
             marcarAguaAdyacente(disparos, casillasBarco);
             actualizarBarcosRestantes(casillasBarco.size());
-            cache.clear(); 
+            cache.clear();
         }
     }
     
@@ -542,6 +643,8 @@ public:
             barcosRestantes.erase(it);
         }
     }
+    
+    // ===== COLOCACIÓN DE BARCOS =====
     
     vector<pair<pair<int, int>, pair<int, bool>>> colocarBarcosIA() {
         vector<pair<pair<int, int>, pair<int, bool>>> posiciones;
