@@ -267,6 +267,7 @@ int main() {
     BotonMenu botonSalir(font, "SALIR", 300, 450, 300, 60);
     
     Jugador jugador;
+    Jugador enemigo;
     IABattleship ia; 
     
     char tableroJugador[10][10];
