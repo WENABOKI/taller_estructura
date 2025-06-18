@@ -263,12 +263,10 @@ int main() {
     textoVictoria.setCharacterSize(30);
     textoVictoria.setFillColor(sf::Color::Green);
     
-    // Crear botones del menú principal
     BotonMenu botonIniciar(font, "INICIAR JUEGO", 300, 350, 300, 60);
     BotonMenu botonSalir(font, "SALIR", 300, 450, 300, 60);
     
     Jugador jugador;
-    Jugador enemigo;
     IABattleship ia; 
     
     char tableroJugador[10][10];
@@ -317,7 +315,6 @@ int main() {
                         float mouseY = static_cast<float>(mouseEvent->position.y);
                         
                         if (botonIniciar.contienePunto(mouseX, mouseY)) {
-                            // Reinicializar el juego
                             jugador = Jugador();
                             enemigo = Jugador();
                             
