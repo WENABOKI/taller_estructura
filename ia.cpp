@@ -136,7 +136,7 @@ public:
         registrarDisparo(fila, col);
         
         if (impacto) {
-            tableroDisparos[fila][col] = 'H'; // Hit
+            tableroDisparos[fila][col] = 'H'; 
             impactosActivos.push_back({fila, col});
             
             if (hundido) {
@@ -145,7 +145,7 @@ public:
             
             actualizarProbabilidades(fila, col, true);
         } else {
-            tableroDisparos[fila][col] = 'X'; // Miss
+            tableroDisparos[fila][col] = 'X'; 
             actualizarProbabilidades(fila, col, false);
         }
     }
