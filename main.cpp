@@ -188,46 +188,12 @@ pair<int, int> obtenerCoordenadas(int mouseX, int mouseY, int offsetX, int offse
     return make_pair(-1, -1);
 }
 
-void inicializarTableroEnemigo(Jugador& enemigo, char tablero[10][10]) {
-    srand(time(0));
-    
-    vector<int> tamanosBarcos = {4, 3, 2, 2};
-    for (int tamano : tamanosBarcos) {
-        bool colocado = false;
-        for (int intentos = 0; intentos < 100 && !colocado; intentos++) {
-            int fila = rand() % BOARD_SIZE;
-            int col = rand() % BOARD_SIZE;
-            bool horizontal = rand() % 2;
-            
-            if (enemigo.colocarBarco(fila, col, tamano, horizontal)) {
-                for (int i = 0; i < tamano; i++) {
-                    int f = horizontal ? fila : fila + i;
-                    int c = horizontal ? col + i : col;
-                    tablero[f][c] = 'B';
-                }
-                colocado = true;
-            }
-        }
-    }
-}
-
-EstadoJuego crearEstadoParaIA(char tableroJugador[10][10], char tableroEnemigo[10][10], 
-                              char disparosJugador[10][10], char disparosIA[10][10], bool turnoJugador) {
-    EstadoJuego estado;
-    
+void obtenerTableroIA(JugadorIA& ia, char tablero[10][10]) {
     for (int i = 0; i < 10; i++) {
         for (int j = 0; j < 10; j++) {
-            estado.tableroJugador[i][j] = tableroJugador[i][j];
-            estado.tableroIA[i][j] = tableroEnemigo[i][j];
-            estado.disparosJugador[i][j] = disparosJugador[i][j];
-            estado.disparosIA[i][j] = disparosIA[i][j];
+            tablero[i][j] = ia.obtenerEstadoCasilla(i, j);
         }
     }
-    
-    estado.turnoJugador = turnoJugador;
-    estado.puntajeJugador = 0;  
-    estado.puntajeIA = 0;       
-    return estado;
 }
 
 int main() {
@@ -267,16 +233,13 @@ int main() {
     BotonMenu botonSalir(font, "SALIR", 300, 450, 300, 60);
     
     Jugador jugador;
-    Jugador enemigo;
-    JugadorIA ia; // Changed from IABattleship to JugadorIA
+    JugadorIA ia; 
     
     char tableroJugador[10][10];
-    char tableroEnemigo[10][10];
     
     for (int i = 0; i < 10; i++) {
         for (int j = 0; j < 10; j++) {
             tableroJugador[i][j] = '~';
-            tableroEnemigo[i][j] = '~';
             disparosJugador[i][j] = '~';
             disparosIA[i][j] = '~';
         }
@@ -317,18 +280,17 @@ int main() {
                         
                         if (botonIniciar.contienePunto(mouseX, mouseY)) {
                             jugador = Jugador();
-                            enemigo = Jugador();
+                            ia = JugadorIA();
                             
                             for (int i = 0; i < 10; i++) {
                                 for (int j = 0; j < 10; j++) {
                                     tableroJugador[i][j] = '~';
-                                    tableroEnemigo[i][j] = '~';
                                     disparosJugador[i][j] = '~';
                                     disparosIA[i][j] = '~';
                                 }
                             }
                             
-                            inicializarTableroEnemigo(enemigo, tableroEnemigo);
+                            ia.colocarBarcosAutomaticamente();
                             
                             for (auto& barco : barcosSeleccionables) {
                                 barco.colocado = false;
@@ -350,7 +312,6 @@ int main() {
                     }
                 }
                 
-                // Resaltar botones al pasar el mouse
                 if (event->is<sf::Event::MouseMoved>()) {
                     const auto& mouseEvent = event->getIf<sf::Event::MouseMoved>();
                     if (mouseEvent) {
@@ -442,12 +403,12 @@ int main() {
                             
                             if (disparosJugador[fila][col] == '~') {
                                 if (jugador.registrarDisparo(fila, col)) {
-                                    bool impacto = enemigo.recibirDisparo(fila, col);
+                                    bool impacto = ia.recibirDisparo(fila, col);
                                     
                                     if (impacto) {
                                         disparosJugador[fila][col] = 'H';
                                         
-                                        if (enemigo.todosLosBarcosHundidos()) {
+                                        if (ia.todosLosBarcosHundidos()) {
                                             estado = JUEGO_TERMINADO;
                                             ganador = "JUGADOR";
                                             juegoTerminado = true;
@@ -475,13 +436,11 @@ int main() {
         
         if (estado == JUGANDO && !turnoJugador && esperandoTurnoIA && !juegoTerminado) {
             if (clockIA.getElapsedTime().asSeconds() > 1.0f) { 
-                // Use the decidirDisparo method instead of decidirMovimiento
                 Movimiento movIA = ia.decidirDisparo();
                 
                 if (movIA.fila != -1 && movIA.col != -1) {
                     bool impacto = jugador.recibirDisparo(movIA.fila, movIA.col);
                     
-                    // Process the result in the IA
                     ia.procesarResultadoDisparo(movIA.fila, movIA.col, impacto, false);
                     
                     if (impacto) {
@@ -501,7 +460,6 @@ int main() {
                         esperandoTurnoIA = false;
                     }
                 } else {
-                    // Fallback to random if IA fails
                     int fila, col;
                     do {
                         fila = rand() % 10;
@@ -575,8 +533,11 @@ int main() {
             textoTurno.setPosition(sf::Vector2f(180, 45));
             window.draw(textoTurno);
             
-            dibujarTablero(window, celda, texto, tableroEnemigo, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE, false, (char*)disparosJugador);
+            char tableroIAVisual[10][10];
+            obtenerTableroIA(ia, tableroIAVisual);
+            dibujarTablero(window, celda, texto, tableroIAVisual, BOARD_OFFSET_X, BOARD_OFFSET_Y, CELL_SIZE, false, (char*)disparosJugador);
             
+            texto.setString("Tu Tablero:");
             texto.setPosition(sf::Vector2f(SMALL_BOARD_OFFSET_X, SMALL_BOARD_OFFSET_Y - 25));
             window.draw(texto);
             

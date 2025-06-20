@@ -5,7 +5,6 @@
 #include <unordered_map>
 #include <cstdlib>
 #include <ctime>
-#include <cmath>
 #include "estructuras.h"
 using namespace std;
 
@@ -20,18 +19,18 @@ public:
         : estrategia(est), condicion(cond), prioridad(prio) {}
     
     ~NodoDecision() {
-        for (auto hijo : hijos) {
+        for (NodoDecision* hijo : hijos) {
             delete hijo;
         }
     }
 };
 
-
 class JugadorIA : public Jugador {
 private:
-    static constexpr int PROFUNDIDAD_MINIMAX = 3;
-    static constexpr int MAX_CANDIDATOS = 6;
-    static constexpr int PROB_BASE = 50;
+    int profundidadMinimax = 3;
+    int maxCandidatos = 6;
+    int probBase = 50;
+    int infinito = 999999;
     
     char tableroDisparos[10][10];
     char tableroImpactos[10][10];
@@ -42,19 +41,31 @@ private:
     mutable unordered_map<string, int> cache;
     int nodosEvaluados;
     int podasRealizadas;
-    vector<pair<int, int>> direcciones = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+    vector<pair<int, int>> direcciones;
+    bool inicializado;
+    
+    int valorAbsoluto(int x) {
+        if (x < 0) {
+            return -x;
+        } else {
+            return x;
+        }
+    }
 
 public:
-    JugadorIA() : Jugador() {
+    JugadorIA() : Jugador(), inicializado(false), raizArbol(nullptr), nodosEvaluados(0), podasRealizadas(0) {
+        direcciones = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
         inicializar();
         construirArbolDecision();
-        srand(time(0));
-        nodosEvaluados = 0;
-        podasRealizadas = 0;
+        srand(static_cast<unsigned int>(time(0)));
+        inicializado = true;
     }
     
     ~JugadorIA() {
-        delete raizArbol;
+        if (raizArbol) {
+            delete raizArbol;
+            raizArbol = nullptr;
+        }
     }
     
     void inicializar() {
@@ -65,23 +76,25 @@ public:
             }
         }
         
-        probabilidades.resize(10, vector<int>(10, PROB_BASE));
+        probabilidades.clear();
+        probabilidades.resize(10, vector<int>(10, probBase));
+        impactosActivos.clear();
         calcularProbabilidadesIniciales();
     }
     
     void calcularProbabilidadesIniciales() {
         for (int i = 0; i < 10; i++) {
             for (int j = 0; j < 10; j++) {
-                probabilidades[i][j] = PROB_BASE;
+                probabilidades[i][j] = probBase;
                 
                 if ((i + j) % 2 == 0) {
-                    probabilidades[i][j] += 25;  
+                    probabilidades[i][j] += 15;  
                 }
                 
                 int variacion = (rand() % 11) - 5;  
                 probabilidades[i][j] += variacion;
                 
-                probabilidades[i][j] = max(30, min(100, probabilidades[i][j]));
+                probabilidades[i][j] = max(20, min(90, probabilidades[i][j]));
             }
         }
     }
@@ -96,7 +109,12 @@ public:
             while (!colocado && intentos < 100) {
                 int fila = rand() % 10;
                 int col = rand() % 10;
-                bool horizontal = rand() % 2;
+                bool horizontal;
+                if (rand() % 2 == 1) {
+                    horizontal = true;
+                } else {
+                    horizontal = false;
+                }
                 
                 if (colocarBarco(fila, col, tamano, horizontal)) {
                     colocado = true;
@@ -107,101 +125,425 @@ public:
     }
     
     void construirArbolDecision() {
-        raizArbol = new NodoDecision("ROOT", "siempre", 100);
+        if (raizArbol) {
+            delete raizArbol;
+            raizArbol = nullptr;
+        }
         
-        NodoDecision* nodoHunt = new NodoDecision("HUNT", "sin_impactos_activos", 70);
-        NodoDecision* nodoTarget = new NodoDecision("TARGET", "hay_impactos_aislados", 85);
-        NodoDecision* nodoDestroy = new NodoDecision("DESTROY", "hay_patron_lineal", 95);
+        raizArbol = new NodoDecision("raiz", "siempre", 100);
         
-        raizArbol->hijos.push_back(nodoHunt);
-        raizArbol->hijos.push_back(nodoTarget);
-        raizArbol->hijos.push_back(nodoDestroy);
+        NodoDecision* nodoCazar = new NodoDecision("cazar", "sin_impactos_activos", 70);
+        NodoDecision* nodoApuntar = new NodoDecision("apuntar", "hay_impactos_aislados", 85);
+        NodoDecision* nodoDestruir = new NodoDecision("destruir", "hay_patron_lineal", 95);
+        
+        raizArbol->hijos.push_back(nodoCazar);
+        raizArbol->hijos.push_back(nodoApuntar);
+        raizArbol->hijos.push_back(nodoDestruir);
     }
     
     Movimiento decidirDisparo() {
+        if (!inicializado) {
+            return generarMovimientoSeguro();
+        }
+        
         nodosEvaluados = 0;
         podasRealizadas = 0;
+        
+        EstadoJuego estadoActual = crearEstadoActual();
+        
+        Movimiento mejorMovimiento = aplicarMinimax(estadoActual);
+        
+        if (mejorMovimiento.fila == -1 || mejorMovimiento.col == -1) {
+            return decidirDisparoTradicional();
+        }
+        
+        return mejorMovimiento;
+    }
+    
+    Movimiento decidirDisparoTradicional() {
+        vector<pair<int, int>> casillasLibres = obtenerCasillasLibres();
+        if (casillasLibres.empty()) {
+            return Movimiento(-1, -1, 0); 
+        }
         
         string estrategia = seleccionarEstrategia();
         vector<Movimiento> candidatos = generarCandidatos(estrategia);
         
         if (candidatos.empty()) {
-            return Movimiento(-1, -1, 0);
+            int idx = rand() % casillasLibres.size();
+            return Movimiento(casillasLibres[idx].first, casillasLibres[idx].second, probBase);
         }
         
-        return aplicarMinimax(candidatos);
+        return seleccionarMejorMovimiento(candidatos);
     }
     
     void procesarResultadoDisparo(int fila, int col, bool impacto, bool hundido) {
-        registrarDisparo(fila, col);
+        if (fila < 0 || fila >= 10 || col < 0 || col >= 10) {
+            return;
+        }
         
         if (impacto) {
-            tableroDisparos[fila][col] = 'H'; 
-            impactosActivos.push_back({fila, col});
-            
             if (hundido) {
-                procesarBarcoHundido(fila, col);
+                tableroDisparos[fila][col] = 'S'; 
+                removerImpactoActivo(fila, col);
+                limpiarImpactosDeBarcoHundido(fila, col);
+            } else {
+                tableroDisparos[fila][col] = 'H'; 
+                impactosActivos.push_back({fila, col});
             }
-            
-            actualizarProbabilidades(fila, col, true);
         } else {
             tableroDisparos[fila][col] = 'X'; 
-            actualizarProbabilidades(fila, col, false);
         }
+        
+        actualizarProbabilidades(fila, col, impacto);
     }
     
     void procesarDisparoRecibido(int fila, int col, bool impacto) {
-        if (impacto) {
-            tableroImpactos[fila][col] = 'H';
-        } else {
-            tableroImpactos[fila][col] = 'X'; 
+        if (fila >= 0 && fila < 10 && col >= 0 && col < 10) {
+            if (impacto) {
+                tableroImpactos[fila][col] = 'H';
+            } else {
+                tableroImpactos[fila][col] = 'X';
+            }
         }
     }
     
-private:
+    char obtenerEstadoCasilla(int fila, int col) const {
+        if (fila < 0 || fila >= 10 || col < 0 || col >= 10) {
+            return '~';
+        }
+        return getTablero().obtenerCelda(fila, col);
+    }
+
+private:    
+    EstadoJuego crearEstadoActual() {
+        EstadoJuego estado;
+        
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                estado.disparosIA[i][j] = tableroDisparos[i][j];
+                estado.disparosJugador[i][j] = tableroImpactos[i][j];
+                estado.tableroIA[i][j] = getTablero().obtenerCelda(i, j);
+                estado.tableroJugador[i][j] = '~';
+            }
+        }
+        
+        estado.turnoJugador = false; 
+        estado.puntajeIA = calcularPuntajeIA();
+        estado.puntajeJugador = calcularPuntajeJugador();
+        
+        return estado;
+    }
+    
+    Movimiento aplicarMinimax(EstadoJuego& estado) {
+        vector<Movimiento> movimientosPosibles = generarMovimientosPosibles(estado);
+        
+        if (movimientosPosibles.empty()) {
+            return Movimiento(-1, -1, 0);
+        }
+        
+        Movimiento mejorMovimiento = movimientosPosibles[0];
+        int mejorValor = -infinito;
+        
+        for (Movimiento& movimiento : movimientosPosibles) {
+            EstadoJuego nuevoEstado = estado;
+            aplicarMovimiento(nuevoEstado, movimiento);
+            
+            int valor = minimax(nuevoEstado, profundidadMinimax - 1, -infinito, infinito, false);
+            
+            if (valor > mejorValor) {
+                mejorValor = valor;
+                mejorMovimiento = movimiento;
+            }
+        }
+        
+        mejorMovimiento.valor = mejorValor;
+        return mejorMovimiento;
+    }
+    
+    int minimax(EstadoJuego& estado, int profundidad, int alfa, int beta, bool maximizando) {
+        nodosEvaluados++;
+        
+        if (profundidad == 0 || esEstadoTerminal(estado)) {
+            return evaluarEstado(estado);
+        }
+        
+        vector<Movimiento> movimientos = generarMovimientosPosibles(estado);
+        
+        if (maximizando) {
+            int maxEval = -infinito;
+            for (auto& movimiento : movimientos) {
+                EstadoJuego nuevoEstado = estado;
+                aplicarMovimiento(nuevoEstado, movimiento);
+                
+                int eval = minimax(nuevoEstado, profundidad - 1, alfa, beta, false);
+                maxEval = max(maxEval, eval);
+                alfa = max(alfa, eval);
+                
+                if (beta <= alfa) {
+                    podasRealizadas++;
+                    break; 
+                }
+            }
+            return maxEval;
+        } else {
+            int minEval = infinito;
+            for (auto& movimiento : movimientos) {
+                EstadoJuego nuevoEstado = estado;
+                aplicarMovimiento(nuevoEstado, movimiento);
+                
+                int eval = minimax(nuevoEstado, profundidad - 1, alfa, beta, true);
+                minEval = min(minEval, eval);
+                beta = min(beta, eval);
+                
+                if (beta <= alfa) {
+                    podasRealizadas++;
+                    break; 
+                }
+            }
+            return minEval;
+        }
+    }
+    
+    vector<Movimiento> generarMovimientosPosibles(EstadoJuego& estado) {
+        vector<Movimiento> movimientos;
+        
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                char casilla;
+                if (estado.turnoJugador) {
+                    casilla = estado.disparosJugador[i][j];
+                } else {
+                    casilla = estado.disparosIA[i][j];
+                }
+                
+                if (casilla == '~') {
+                    int valor = calcularValorMovimiento(estado, i, j);
+                    movimientos.push_back(Movimiento(i, j, valor));
+                }
+            }
+        }
+        
+        sort(movimientos.begin(), movimientos.end(), 
+             [](const Movimiento& a, const Movimiento& b) {
+                 return a.valor > b.valor;
+             });
+        
+        if (movimientos.size() > maxCandidatos) {
+            movimientos.resize(maxCandidatos);
+        }
+        
+        return movimientos;
+    }
+    
+    void aplicarMovimiento(EstadoJuego& estado, Movimiento& movimiento) {
+        if (estado.turnoJugador) {
+            estado.disparosJugador[movimiento.fila][movimiento.col] = 'X';
+            if (estado.tableroIA[movimiento.fila][movimiento.col] == 'B') {
+                estado.disparosJugador[movimiento.fila][movimiento.col] = 'H';
+                estado.puntajeJugador += 10;
+            }
+        } else {
+            estado.disparosIA[movimiento.fila][movimiento.col] = 'X';
+            if (rand() % 100 < probabilidades[movimiento.fila][movimiento.col]) {
+                estado.disparosIA[movimiento.fila][movimiento.col] = 'H';
+                estado.puntajeIA += 10;
+            }
+        }
+        
+        estado.turnoJugador = !estado.turnoJugador;
+    }
+    
+    int evaluarEstado(EstadoJuego& estado) {
+        int puntuacion = 0;
+        
+        puntuacion += (estado.puntajeIA - estado.puntajeJugador) * 10;
+        
+        puntuacion += evaluarPatronesImpactos(estado);
+        
+        puntuacion += evaluarPosicionesEstrategicas(estado);
+        
+        return puntuacion;
+    }
+    
+    int evaluarPatronesImpactos(EstadoJuego& estado) {
+        int puntuacion = 0;
+        
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                if (estado.disparosIA[i][j] == 'H') {
+                    puntuacion += 20;
+                    for (const auto& dir : direcciones) {
+                        int ni = i + dir.first;
+                        int nj = j + dir.second;
+                        if (ni >= 0 && ni < 10 && nj >= 0 && nj < 10 && 
+                            estado.disparosIA[ni][nj] == 'H') {
+                            puntuacion += 15;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return puntuacion;
+    }
+    
+    int evaluarPosicionesEstrategicas(EstadoJuego& estado) {
+        int puntuacion = 0;
+        
+        int disparosRealizados = 0;
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                if (estado.disparosIA[i][j] != '~') {
+                    disparosRealizados++;
+                }
+            }
+        }
+        
+        if (disparosRealizados > 20 && estado.puntajeIA < 50) {
+            puntuacion -= 30;
+        }
+        
+        return puntuacion;
+    }
+    
+    int calcularValorMovimiento(EstadoJuego& estado, int fila, int col) {
+        int valor = probabilidades[fila][col];
+        
+        for (const auto& impacto : impactosActivos) {
+            int distancia = valorAbsoluto(fila - impacto.first) + valorAbsoluto(col - impacto.second);
+            if (distancia == 1) {
+                valor += 100;
+            } else if (distancia == 2) {
+                valor += 20;
+            }
+        }
+        
+        return valor;
+    }
+    
+    bool esEstadoTerminal(EstadoJuego& estado) {
+        return estado.puntajeIA >= 170 || estado.puntajeJugador >= 170;
+    }
+    
+    int calcularPuntajeIA() {
+        int puntaje = 0;
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                if (tableroDisparos[i][j] == 'H' || tableroDisparos[i][j] == 'S') {
+                    puntaje += 10;
+                }
+            }
+        }
+        return puntaje;
+    }
+    
+    int calcularPuntajeJugador() {
+        int puntaje = 0;
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                if (tableroImpactos[i][j] == 'H') {
+                    puntaje += 10;
+                }
+            }
+        }
+        return puntaje;
+    }
+    
+    Movimiento generarMovimientoSeguro() {
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                if (tableroDisparos[i][j] == '~') {
+                    return Movimiento(i, j, probBase);
+                }
+            }
+        }
+        return Movimiento(0, 0, 0);
+    }
+    
+    vector<pair<int, int>> obtenerCasillasLibres() {
+        vector<pair<int, int>> libres;
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                if (tableroDisparos[i][j] == '~') {
+                    libres.push_back({i, j});
+                }
+            }
+        }
+        return libres;
+    }
+    
+    void removerImpactoActivo(int fila, int col) {
+        for (size_t i = 0; i < impactosActivos.size(); ++i) {
+            if (impactosActivos[i].first == fila && impactosActivos[i].second == col) {
+                impactosActivos[i] = impactosActivos.back();
+                impactosActivos.pop_back();
+                break; 
+            }
+        }
+    }
+    
+    void limpiarImpactosDeBarcoHundido(int fila, int col) {
+        vector<pair<int, int>> porProcesar = {{fila, col}};
+        
+        while (!porProcesar.empty()) {
+            pair<int, int> actual = porProcesar.back();
+            porProcesar.pop_back();
+            
+            for (const auto& dir : direcciones) {
+                int nf = actual.first + dir.first;
+                int nc = actual.second + dir.second;
+                
+                if (esValidoYImpacto(nf, nc)) {
+                    tableroDisparos[nf][nc] = 'S';
+                    removerImpactoActivo(nf, nc);
+                    porProcesar.push_back({nf, nc});
+                }
+            }
+        }
+    }
+    
     string seleccionarEstrategia() {
+        if (!raizArbol) {
+            return "cazar";
+        }
         return evaluarNodo(raizArbol);
     }
     
     string evaluarNodo(NodoDecision* nodo) {
+        if (!nodo) {
+            return "cazar";
+        }
+        
         if (nodo->hijos.empty()) {
             return nodo->estrategia;
         }
         
-        sort(nodo->hijos.begin(), nodo->hijos.end(),
+        vector<NodoDecision*> hijosOrdenados = nodo->hijos;
+        sort(hijosOrdenados.begin(), hijosOrdenados.end(),
              [](NodoDecision* a, NodoDecision* b) {
                  return a->prioridad > b->prioridad;
              });
         
-        for (auto hijo : nodo->hijos) {
+        for (NodoDecision* hijo : hijosOrdenados) {
             if (evaluarCondicion(hijo->condicion)) {
                 return evaluarNodo(hijo);
             }
         }
         
-        return evaluarNodo(nodo->hijos[0]);
+        return hijosOrdenados[0]->estrategia;
     }
     
     bool evaluarCondicion(const string& condicion) {
         if (condicion == "siempre") return true;
-        
-        if (condicion == "sin_impactos_activos") {
-            return impactosActivos.empty();
-        }
-        
-        if (condicion == "hay_impactos_aislados") {
-            return hayImpactosAislados();
-        }
-        
-        if (condicion == "hay_patron_lineal") {
-            return hayPatronLineal();
-        }
-        
+        if (condicion == "sin_impactos_activos") return impactosActivos.empty();
+        if (condicion == "hay_impactos_aislados") return hayImpactosAislados();
+        if (condicion == "hay_patron_lineal") return hayPatronLineal();
         return false;
     }
     
     bool hayImpactosAislados() {
-        for (auto& impacto : impactosActivos) {
+        for (const auto& impacto : impactosActivos) {
             if (!tieneImpactoAdyacente(impacto.first, impacto.second)) {
                 return true;
             }
@@ -210,7 +552,7 @@ private:
     }
     
     bool hayPatronLineal() {
-        for (auto& impacto : impactosActivos) {
+        for (const auto& impacto : impactosActivos) {
             if (tieneImpactoAdyacente(impacto.first, impacto.second)) {
                 return true;
             }
@@ -219,7 +561,7 @@ private:
     }
     
     bool tieneImpactoAdyacente(int fila, int col) {
-        for (auto& dir : direcciones) {
+        for (const auto& dir : direcciones) {
             int nf = fila + dir.first;
             int nc = col + dir.second;
             if (esValidoYImpacto(nf, nc)) {
@@ -232,20 +574,20 @@ private:
     vector<Movimiento> generarCandidatos(const string& estrategia) {
         vector<Movimiento> candidatos;
         
-        if (estrategia == "TARGET" || estrategia == "DESTROY") {
+        if (estrategia == "apuntar" || estrategia == "destruir") {
             candidatos = buscarObjetivosDirectos();
         }
         
-        if (candidatos.empty() || estrategia == "HUNT") {
+        if (candidatos.empty() || estrategia == "cazar") {
             candidatos = buscarCasillasOptimas();
         }
         
-        if (candidatos.size() > MAX_CANDIDATOS) {
+        if (candidatos.size() > maxCandidatos) {
             sort(candidatos.begin(), candidatos.end(),
                  [](const Movimiento& a, const Movimiento& b) {
                      return a.valor > b.valor;
                  });
-            candidatos.resize(MAX_CANDIDATOS);
+            candidatos.resize(maxCandidatos);
         }
         
         return candidatos;
@@ -254,11 +596,11 @@ private:
     vector<Movimiento> buscarObjetivosDirectos() {
         vector<Movimiento> objetivos;
         
-        for (auto& impacto : impactosActivos) {
+        for (const auto& impacto : impactosActivos) {
             int fila = impacto.first;
             int col = impacto.second;
             
-            for (auto& dir : direcciones) {
+            for (const auto& dir : direcciones) {
                 int nf = fila + dir.first;
                 int nc = col + dir.second;
                 
@@ -287,109 +629,32 @@ private:
         return candidatos;
     }
     
-    Movimiento aplicarMinimax(vector<Movimiento>& candidatos) {
+    Movimiento seleccionarMejorMovimiento(vector<Movimiento>& candidatos) {
+        if (candidatos.empty()) {
+            return Movimiento(0, 0, 0);
+        }
+        
         if (candidatos.size() == 1) {
             return candidatos[0];
         }
         
-        Movimiento mejorMovimiento = candidatos[0];
-        int mejorValor = INT_MIN;
-        
-        for (auto& candidato : candidatos) {
-            int valor = evaluarMovimiento(candidato);
-            
-            if (valor > mejorValor) {
-                mejorValor = valor;
-                mejorMovimiento = candidato;
+        Movimiento mejor = candidatos[0];
+        for (const Movimiento& candidato : candidatos) {
+            if (candidato.valor > mejor.valor) {
+                mejor = candidato;
             }
         }
         
-        return mejorMovimiento;
-    }
-    
-    int evaluarMovimiento(const Movimiento& mov) {
-        int probabilidadImpacto = calcularProbabilidadImpacto(mov.fila, mov.col);
-        
-        int valor = probabilidadImpacto * 10;
-        
-        for (auto& impacto : impactosActivos) {
-            int distancia = abs(mov.fila - impacto.first) + abs(mov.col - impacto.second);
-            if (distancia == 1) {
-                valor += 200; 
-            } else if (distancia == 2) {
-                valor += 50; 
-            }
-        }
-        
-        return valor;
-    }
-    
-    void procesarBarcoHundido(int fila, int col) {
-        vector<pair<int, int>> barcoHundido = encontrarBarcoCompleto(fila, col);
-        
-        for (auto& casilla : barcoHundido) {
-            tableroDisparos[casilla.first][casilla.second] = 'S';
-            
-            auto it = find(impactosActivos.begin(), impactosActivos.end(), casilla);
-            if (it != impactosActivos.end()) {
-                impactosActivos.erase(it);
-            }
-        }
-        
-        reducirProbabilidadesAlrededor(barcoHundido);
-    }
-    
-    vector<pair<int, int>> encontrarBarcoCompleto(int fila, int col) {
-        vector<pair<int, int>> barco;
-        vector<vector<bool>> visitado(10, vector<bool>(10, false));
-        
-        buscarCasillasBarcoRecursivo(fila, col, barco, visitado);
-        
-        return barco;
-    }
-    
-    void buscarCasillasBarcoRecursivo(int fila, int col, vector<pair<int, int>>& barco, 
-                                     vector<vector<bool>>& visitado) {
-        if (fila < 0 || fila >= 10 || col < 0 || col >= 10 || 
-            visitado[fila][col] || tableroDisparos[fila][col] != 'H') {
-            return;
-        }
-        
-        visitado[fila][col] = true;
-        barco.push_back({fila, col});
-        
-        for (auto& dir : direcciones) {
-            int nf = fila + dir.first;
-            int nc = col + dir.second;
-            buscarCasillasBarcoRecursivo(nf, nc, barco, visitado);
-        }
-    }
-    
-    void reducirProbabilidadesAlrededor(const vector<pair<int, int>>& barco) {
-        for (auto& casilla : barco) {
-            int f = casilla.first;
-            int c = casilla.second;
-            
-            for (int di = -1; di <= 1; di++) {
-                for (int dj = -1; dj <= 1; dj++) {
-                    int nf = f + di;
-                    int nc = c + dj;
-                    
-                    if (nf >= 0 && nf < 10 && nc >= 0 && nc < 10) {
-                        probabilidades[nf][nc] = 1; 
-                    }
-                }
-            }
-        }
+        return mejor;
     }
     
     void actualizarProbabilidades(int fila, int col, bool impacto) {
         if (impacto) {
-            for (auto& dir : direcciones) {
+            for (const auto& dir : direcciones) {
                 int nf = fila + dir.first;
                 int nc = col + dir.second;
                 if (esValidoYLibre(nf, nc)) {
-                    probabilidades[nf][nc] = min(95, probabilidades[nf][nc] + 40);
+                    probabilidades[nf][nc] = min(90, probabilidades[nf][nc] + 30);
                 }
             }
         } else {
@@ -400,8 +665,8 @@ private:
     int calcularPuntuacion(int fila, int col) {
         int puntuacion = probabilidades[fila][col];
         
-        for (auto& impacto : impactosActivos) {
-            int distancia = abs(fila - impacto.first) + abs(col - impacto.second);
+        for (const auto& impacto : impactosActivos) {
+            int distancia = valorAbsoluto(fila - impacto.first) + valorAbsoluto(col - impacto.second);
             if (distancia == 1) {
                 puntuacion += 100;
             } else if (distancia == 2) {
@@ -410,19 +675,6 @@ private:
         }
         
         return puntuacion;
-    }
-    
-    int calcularProbabilidadImpacto(int fila, int col) {
-        int probabilidad = probabilidades[fila][col];
-        
-        for (auto& impacto : impactosActivos) {
-            int distancia = abs(fila - impacto.first) + abs(col - impacto.second);
-            if (distancia == 1) {
-                probabilidad += 30;
-            }
-        }
-        
-        return min(95, max(5, probabilidad));
     }
     
     bool esValidoYLibre(int fila, int col) {
@@ -434,6 +686,4 @@ private:
         return fila >= 0 && fila < 10 && col >= 0 && col < 10 && 
                tableroDisparos[fila][col] == 'H';
     }
-    
-    
 };
